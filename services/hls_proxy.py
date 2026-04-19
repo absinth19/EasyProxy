@@ -41,6 +41,7 @@ from config import (
     API_PASSWORD,
     check_password,
     MPD_MODE,
+    VERSION_MODE,
 )
 from extractors.generic import GenericHLSExtractor, ExtractorError
 from services.manifest_rewriter import ManifestRewriter
@@ -2647,6 +2648,7 @@ class HLSProxy:
         """Serve la pagina principale index.html."""
         try:
             html_content = self._read_template("index.html")
+            html_content = html_content.replace("{{VERSION_MODE}}", VERSION_MODE)
             return web.Response(text=html_content, content_type="text/html")
         except Exception as e:
             logger.error(f"❌ Critical error: unable to load 'index.html': {e}")
@@ -2712,6 +2714,7 @@ class HLSProxy:
         """Serve la pagina HTML delle informazioni."""
         try:
             html_content = self._read_template("info.html")
+            html_content = html_content.replace("{{VERSION_MODE}}", VERSION_MODE)
             return web.Response(text=html_content, content_type="text/html")
         except Exception as e:
             logger.error(f"❌ Critical error: unable to load 'info.html': {e}")
@@ -2744,6 +2747,7 @@ class HLSProxy:
         info = {
             "proxy": "HLS Proxy Server",
             "version": "2.5.0",  # Aggiornata per supporto AES-128
+            "mode": VERSION_MODE,
             "status": "✅ Running",
             "features": [
                 "✅ Proxy HLS streams",
