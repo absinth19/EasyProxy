@@ -273,7 +273,7 @@ class VidXgoExtractor:
                 cache_fresh = (expiry_ts - now) > REFRESH_SAFETY_MARGIN
             else:
                 cache_fresh = (now - cached_ts) < CACHE_TTL_SECONDS
-        if cached and cache_fresh and (not force_refresh or background_refresh):
+        if cached and cache_fresh and not force_refresh:
             ts, m3u8_url, master_text, captured_map, cached_headers = cached
             logger.debug(
                 f"vidxgo: cache hit for {url} (age={int(now - ts)}s, "

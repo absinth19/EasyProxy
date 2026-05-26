@@ -207,16 +207,11 @@ class HLSProxyExtractorHandlerMixin:
                     async def shorten_captured_manifest_url(manifest_url: str) -> str:
                         captured_text = captured_manifests.get(manifest_url)
                         if captured_text:
-                            # Main manifest URL -> start background refresh loop
-                            # Other variants (audio/subtitle) -> long TTL, no refresh needed
-                            is_primary = manifest_url == stream_url
                             return await self.store_captured_hls_manifest(
                                 manifest_url,
                                 captured_text,
                                 stream_headers,
                                 source_url=original_channel_url,
-                                start_refresh=is_primary,
-                                ttl=86400 if not is_primary else 30,
                             )
                         return await self.shorten_hls_url(manifest_url)
 
