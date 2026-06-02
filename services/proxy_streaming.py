@@ -111,7 +111,10 @@ class HLSProxyStreamingMixin:
                 except (ClientConnectionError, AioProxyError, PyProxyError, asyncio.TimeoutError, OSError) as e:
                     if attempt == 0 and current_proxy:
                         logger.warning("Segment proxy %s failed for %s: %r. Retrying with a different proxy.", current_proxy, segment_name, e)
-                        mark_proxy_dead(current_proxy)
+                        self._mark_proxy_dead_if_allowed(
+                            current_proxy,
+                            extractor_key=request.query.get("extractor_key"),
+                        )
                         new_proxy = get_proxy_for_url(segment_url, TRANSPORT_ROUTES, GLOBAL_PROXIES, bypass_warp=bypass_warp)
                         if new_proxy and new_proxy != current_proxy:
                             current_proxy = new_proxy
@@ -517,7 +520,11 @@ class HLSProxyStreamingMixin:
                     return None
                 old_proxy = session_proxy
                 logger.info("Rotating proxy after upstream error on %s", old_proxy)
-                mark_proxy_dead(old_proxy, dead_duration=120)
+                self._mark_proxy_dead_if_allowed(
+                    old_proxy,
+                    dead_duration=120,
+                    extractor_key=request.query.get("extractor_key"),
+                )
                 if old_proxy in self.proxy_sessions:
                     old = self.proxy_sessions.pop(old_proxy, None)
                     if old and not old.closed:
@@ -949,10 +956,13 @@ class HLSProxyStreamingMixin:
             active_proxy = session_proxy or forced_proxy
             if active_proxy:
                 logger.warning(
-                    "Proxy %s failed connection to source: %r. Marking dead.",
+                    "Proxy %s failed connection to source: %r.",
                     active_proxy, e
                 )
-                mark_proxy_dead(active_proxy)
+                self._mark_proxy_dead_if_allowed(
+                    active_proxy,
+                    extractor_key=request.query.get("extractor_key"),
+                )
             warp_retry_response = await retry_direct_after_warp(e)
             if warp_retry_response:
                 return warp_retry_response
@@ -965,10 +975,13 @@ class HLSProxyStreamingMixin:
                 active_proxy = session_proxy or forced_proxy
                 if active_proxy:
                     logger.warning(
-                        "Proxy %s connection lost/reset: %r. Marking dead.",
+                        "Proxy %s connection lost/reset: %r.",
                         active_proxy, e
                     )
-                    mark_proxy_dead(active_proxy)
+                    self._mark_proxy_dead_if_allowed(
+                        active_proxy,
+                        extractor_key=request.query.get("extractor_key"),
+                    )
                 warp_retry_response = await retry_direct_after_warp(e)
                 if warp_retry_response:
                     return warp_retry_response
@@ -986,8 +999,11 @@ class HLSProxyStreamingMixin:
                 is_proxy_err = any(x in err_lower for x in ("invalid reply", "request rejected", "connection refused", "connection reset", "proxy connection timed out", "can't connect to server", "couldn't connect", "connect call failed", "0x9", "0x7", "socks5"))
                 if is_proxy_err:
                     request._ps_retried = True
-                    logger.warning("Proxy %s failed for %s, marking dead and triggering re-extraction", forced_proxy, stream_url)
-                    mark_proxy_dead(forced_proxy)
+                    logger.warning("Proxy %s failed for %s, checking dead policy and triggering re-extraction", forced_proxy, stream_url)
+                    self._mark_proxy_dead_if_allowed(
+                        forced_proxy,
+                        extractor_key=request.query.get("extractor_key"),
+                    )
                     raise Exception("PROXY_DEAD_RETRY_EXTRACTION")
 
             logger.error(
