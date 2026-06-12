@@ -213,7 +213,7 @@ def _get_dynamic_warp_exclude_domains() -> list:
 
 def _is_warp_excluded(url: str) -> bool:
     normalized = url.lower()
-    for domain in _WARP_EXCLUDE_DOMAINS:
+    for domain in WARP_EXCLUDE_DOMAINS:
         stripped = domain.lstrip("*.")
         if stripped in normalized:
             return True
@@ -674,7 +674,7 @@ API_PASSWORD = os.environ.get("API_PASSWORD")
 PORT = int(os.environ.get("PORT", 7860))
 
 # --- Version/Mode Configuration ---
-APP_VERSION = "2.9.03"
+APP_VERSION = "2.9.04"
 
 _has_solvers = os.path.exists("flaresolverr")
 VERSION_MODE = "Full" if _has_solvers else "Light"

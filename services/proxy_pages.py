@@ -731,7 +731,11 @@ class HLSProxyPagesMixin:
 
         if enable:
             logger.info("WARP enabled via admin panel")
-            await self.reconnect_warp()
+            result = await self.reconnect_warp()
+            if result.get("status") != "ok":
+                logger.warning(f"WARP enable failed: {result.get('message')}")
+                self._warp_check_ts = 0
+                return web.json_response({"status": "error", "message": result.get("message", "WARP connect failed")}, status=500)
         else:
             logger.info("WARP disabled via admin panel")
             await self._stop_warp_proxy()

@@ -621,8 +621,7 @@ async function reconnectWarp() {
     } catch(e) {
         toast('Reconnect error: ' + e.message, 'error');
     }
-    btn.textContent = '🔄 Reconnect WARP (new IP)';
-    btn.disabled = false;
+    if (btn) { btn.textContent = '🔄 Reconnect WARP (new IP)'; btn.disabled = false; }
 }
 
 function logout() {

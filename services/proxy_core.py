@@ -513,7 +513,18 @@ class HLSProxyCoreMixin:
                 "wireproxy", "-c", wp_conf,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
             )
-            result["message"] = "WARP reconnected via wireproxy (new IP)"
+            # Verify SOCKS5 is listening
+            import socket
+            for _ in range(10):
+                try:
+                    s = socket.create_connection(("127.0.0.1", 1080), timeout=2)
+                    s.close()
+                    result["message"] = "WARP reconnected via wireproxy (new IP)"
+                    return result
+                except (OSError, ConnectionRefusedError):
+                    await asyncio.sleep(1)
+            result["status"] = "error"
+            result["message"] = "wireproxy started but SOCKS5 not detected on 1080"
         except Exception as e:
             result["status"] = "error"
             result["message"] = f"WARP reconnect failed: {e}"
@@ -968,22 +979,16 @@ async def _warp_cli_connect() -> bool:
     """Standalone WARP warp-cli setup: disconnect, re-register, mode proxy, connect."""
     import config_store, services.proxy_shared as _shared
     try:
-        proc = await asyncio.create_subprocess_exec(
-            "warp-cli", "--accept-tos", "disconnect",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.wait_for(proc.wait(), timeout=10)
+        for cmd in [
+            ["warp-cli", "--accept-tos", "disconnect"],
+            ["warp-cli", "--accept-tos", "registration", "delete"],
+            ["warp-cli", "--accept-tos", "registration", "new"],
+        ]:
+            proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+            rc = await asyncio.wait_for(proc.wait(), timeout=10)
+            if rc != 0:
+                return False
         await asyncio.sleep(2)
-        proc = await asyncio.create_subprocess_exec(
-            "warp-cli", "--accept-tos", "registration", "delete",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.wait_for(proc.wait(), timeout=10)
-        proc = await asyncio.create_subprocess_exec(
-            "warp-cli", "--accept-tos", "registration", "new",
-            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
-        )
-        await asyncio.wait_for(proc.wait(), timeout=10)
         license_key = _shared.WARP_LICENSE_KEY or config_store.get("warp_license_key", "")
         if license_key:
             proc = await asyncio.create_subprocess_exec(
@@ -1001,7 +1006,18 @@ async def _warp_cli_connect() -> bool:
             "warp-cli", "--accept-tos", "connect",
             stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL,
         )
-        await asyncio.wait_for(proc.wait(), timeout=10)
-        return True
+        rc = await asyncio.wait_for(proc.wait(), timeout=15)
+        if rc != 0:
+            return False
+        # Verify SOCKS5 is actually listening
+        import socket
+        for _ in range(5):
+            try:
+                s = socket.create_connection(("127.0.0.1", 1080), timeout=2)
+                s.close()
+                return True
+            except (OSError, ConnectionRefusedError):
+                await asyncio.sleep(1)
+        return False
     except (FileNotFoundError, asyncio.TimeoutError):
         return False
