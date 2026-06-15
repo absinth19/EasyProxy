@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EasyProxy - URL Generator</title>
     <link rel="icon" type="image/x-icon" href="/favicon.ico">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 
@@ -494,6 +495,58 @@
         ::-webkit-scrollbar-thumb { background: var(--surface-elevated); border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: var(--border-accent); }
 
+        /* Video Player Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.75);
+            backdrop-filter: blur(8px);
+            z-index: 1000;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            padding: 1.5rem;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+            opacity: 1;
+        }
+
+        .modal-content {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 16px;
+            padding: 1.75rem;
+            max-width: 800px;
+            width: 100%;
+            position: relative;
+            transform: scale(0.9);
+            transition: transform 0.3s ease;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.75rem;
+            cursor: pointer;
+            line-height: 1;
+            transition: color 0.15s ease;
+        }
+
+        .modal-close:hover {
+            color: var(--text-primary);
+        }
+
         @media (max-width: 600px) {
             .container { padding: 1rem; }
             .glass-card { padding: 1.25rem; }
@@ -572,6 +625,7 @@
                 <div class="btn-row">
                     <button id="generateProxy" class="btn btn-primary">Generate URL</button>
                     <button id="copyProxyResult" class="btn btn-secondary">Copy</button>
+                    <button id="playProxyResult" class="btn btn-primary" style="display: none; background: var(--secondary-gradient);">▶️ Test Stream</button>
                 </div>
                 <textarea id="proxyResult" class="result-area" readonly rows="5" placeholder="Generated URL will appear here..."></textarea>
             </div>
@@ -662,6 +716,7 @@
                 <div class="btn-row">
                     <button id="generateExtractor" class="btn btn-primary">Generate Extractor URL</button>
                     <button id="copyExtractorResult" class="btn btn-secondary">Copy</button>
+                    <button id="playExtractorResult" class="btn btn-primary" style="display: none; background: var(--secondary-gradient);">▶️ Test Stream</button>
                 </div>
                 <textarea id="extractorResult" class="result-area" readonly rows="4" placeholder="Generated extractor URL will appear here..."></textarea>
             </div>
@@ -866,6 +921,7 @@
                 if (!response.ok) {
                     result.value = text;
                     document.getElementById('proxyUrlList').innerHTML = '';
+                    document.getElementById('playProxyResult').style.display = 'none';
                     return;
                 }
 
@@ -881,8 +937,10 @@
                     });
                 }
                 result.value = urls.join('\n');
+                document.getElementById('playProxyResult').style.display = 'inline-flex';
             } catch (error) {
                 result.value = 'Error: ' + error.message;
+                document.getElementById('playProxyResult').style.display = 'none';
             }
         }
 
@@ -899,6 +957,7 @@
             if (!host || !url) {
                 result.value = 'Please enter both host and video URL.';
                 document.getElementById('extractorUrlList').innerHTML = '';
+                document.getElementById('playExtractorResult').style.display = 'none';
                 return;
             }
 
@@ -912,6 +971,7 @@
 
             const generated = buildBaseUrl() + '/extractor/video' + extension + '?' + params.toString();
             result.value = generated;
+            document.getElementById('playExtractorResult').style.display = 'inline-flex';
         }
 
         async function generateBatch() {
@@ -967,6 +1027,108 @@
         document.getElementById('copyProxyResult').addEventListener('click', (e) => copyFrom('proxyResult', e.target));
         document.getElementById('copyExtractorResult').addEventListener('click', (e) => copyFrom('extractorResult', e.target));
         document.getElementById('copyBatchResult').addEventListener('click', (e) => copyFrom('batchResult', e.target));
+
+        let hlsPlayer = null;
+
+        function openPlayerModal(streamUrl) {
+            const modal = document.getElementById('videoPlayerModal');
+            const video = document.getElementById('testVideo');
+            const errorDiv = document.getElementById('playerError');
+            const urlSpan = document.querySelector('#playerStreamUrl span');
+            
+            errorDiv.style.display = 'none';
+            urlSpan.textContent = streamUrl;
+            modal.classList.add('active');
+            
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
+            video.src = '';
+            
+            const isHls = streamUrl.includes('.m3u8') || streamUrl.toLowerCase().includes('/proxy/manifest.m3u8') || streamUrl.toLowerCase().includes('/proxy/hls/');
+            
+            video.addEventListener('error', handleVideoError);
+            
+            if (isHls) {
+                if (Hls.isSupported()) {
+                    hlsPlayer = new Hls({
+                        maxMaxBufferLength: 10,
+                        enableWorker: true
+                    });
+                    hlsPlayer.loadSource(streamUrl);
+                    hlsPlayer.attachMedia(video);
+                    hlsPlayer.on(Hls.Events.MANIFEST_PARSED, function() {
+                        video.play().catch(e => console.log("Auto-play blocked:", e));
+                    });
+                    hlsPlayer.on(Hls.Events.ERROR, function(event, data) {
+                        if (data.fatal) {
+                            switch(data.type) {
+                                case Hls.ErrorTypes.NETWORK_ERROR:
+                                    hlsPlayer.startLoad();
+                                    break;
+                                case Hls.ErrorTypes.MEDIA_ERROR:
+                                    hlsPlayer.recoverMediaError();
+                                    break;
+                                default:
+                                    showPlayerError("Playback Error", "Fatal network or media processing error: " + data.details);
+                                    hlsPlayer.destroy();
+                                    hlsPlayer = null;
+                                    break;
+                            }
+                        }
+                    });
+                } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                    video.src = streamUrl;
+                    video.addEventListener('loadedmetadata', function() {
+                        video.play().catch(e => console.log("Auto-play blocked:", e));
+                    });
+                } else {
+                    showPlayerError("Not Supported", "Your browser does not support HLS playback.");
+                }
+            } else {
+                video.src = streamUrl;
+                video.play().catch(e => console.log("Auto-play blocked:", e));
+            }
+        }
+
+        window.closePlayerModal = function() {
+            const modal = document.getElementById('videoPlayerModal');
+            const video = document.getElementById('testVideo');
+            
+            modal.classList.remove('active');
+            
+            if (hlsPlayer) {
+                hlsPlayer.destroy();
+                hlsPlayer = null;
+            }
+            video.pause();
+            video.src = '';
+            video.removeEventListener('error', handleVideoError);
+        }
+
+        function handleVideoError(e) {
+            const video = e.target;
+            if (video.error) {
+                showPlayerError("Stream Error", "Code: " + video.error.code + ". The browser was unable to load the video stream.");
+            }
+        }
+
+        function showPlayerError(title, detail) {
+            document.getElementById('playerError').style.display = 'flex';
+            document.getElementById('playerErrorMessage').textContent = title;
+            document.getElementById('playerErrorDetail').textContent = detail;
+        }
+
+        document.getElementById('playProxyResult').addEventListener('click', () => {
+            const url = document.getElementById('proxyResult').value.trim();
+            if (url) openPlayerModal(url);
+        });
+
+        document.getElementById('playExtractorResult').addEventListener('click', () => {
+            const url = document.getElementById('extractorResult').value.trim();
+            if (url) openPlayerModal(url);
+        });
     </script>
 
         <footer style="text-align:center;padding:3rem 1rem 2rem;border-top:1px solid var(--border-primary);margin-top:3rem">
@@ -981,5 +1143,28 @@
             </div>
             <p style="color:var(--text-muted);font-size:0.7rem">&copy; EasyProxy</p>
         </footer>
+
+        <!-- Video Player Modal -->
+        <div class="modal-overlay" id="videoPlayerModal">
+            <div class="modal-content">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="font-weight: 700; color: var(--text-primary);" id="playerTitle">Stream Test Player</h3>
+                    <button class="modal-close" onclick="closePlayerModal()">&times;</button>
+                </div>
+                
+                <div style="width: 100%; aspect-ratio: 16/9; background: #000; border-radius: 12px; overflow: hidden; position: relative;">
+                    <video id="testVideo" controls style="width: 100%; height: 100%; object-fit: contain;"></video>
+                    <div id="playerError" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: none; flex-direction: column; justify-content: center; align-items: center; padding: 2rem; text-align: center; z-index: 10;">
+                        <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">⚠️</div>
+                        <div style="color: var(--text-primary); font-weight: 600; margin-bottom: 0.5rem;" id="playerErrorMessage">Error playing stream</div>
+                        <div style="color: var(--text-muted); font-size: 0.8rem;" id="playerErrorDetail">Ensure the stream is active and the proxy is configured correctly.</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 1rem; font-size: 0.8rem; color: var(--text-secondary); word-break: break-all;" id="playerStreamUrl">
+                    <strong>Stream URL:</strong> <span></span>
+                </div>
+            </div>
+        </div>
 </body>
 </html>
